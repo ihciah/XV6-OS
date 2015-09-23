@@ -144,6 +144,28 @@ lcr3(uint val)
   asm volatile("movl %0,%%cr3" : : "r" (val));
 }
 
+static inline int
+shutdown(void)
+{
+  asm("movl $0x80000b80, %eax\n"
+	"movw $0xcf8, %dx\n"
+	"outl  %eax, %dx\n"
+	"movw $0xcfc, %dx\n"
+	"inb  %dx, %al\n"
+	"orb  $1, %al\n"
+	"outb  %al, %dx\n"
+	"\n"
+	"movl $0x80000b40, %eax\n"
+	"movw $0xcf8, %dx\n"
+	"outl  %eax, %dx\n"
+	"movl $0x7001, %eax\n"
+	"movw $0xcfc, %dx\n"
+	"outl  %eax, %dx\n"
+	"movw $0x2000, %ax\n"
+	"movw $0x7004, %dx\n"
+	"outw  %ax, %dx\n");
+	return 0;
+}
 //PAGEBREAK: 36
 // Layout of the trap frame built on the stack by the
 // hardware and by trapasm.S, and passed to trap().
