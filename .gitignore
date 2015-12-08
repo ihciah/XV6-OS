@@ -16,3 +16,4 @@ mkfs
 .gdbinit
 .gdb_history
 peda-session-kernel.txt
+.idea*
