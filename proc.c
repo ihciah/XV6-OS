@@ -15,6 +15,8 @@ struct {
 static struct proc *initproc;
 
 int nextpid = 1;
+unsigned int gtime = 1; //Global time(By ihc)
+
 extern void forkret(void);
 extern void trapret(void);
 
@@ -99,6 +101,7 @@ userinit(void)
   safestrcpy(p->name, "initcode", sizeof(p->name));
   p->cwd = namei("/");
 
+  p->rtime = gtime++;
   p->state = RUNNABLE;
 }
 
@@ -160,6 +163,7 @@ fork(void)
 
   // lock to force the compiler to emit the np->state write last.
   acquire(&ptable.lock);
+  np->rtime = gtime++;
   np->state = RUNNABLE;
   release(&ptable.lock);
   
@@ -265,7 +269,8 @@ wait(void)
 void
 scheduler(void)
 {
-  struct proc *p;
+  struct proc *p, *p_least;
+  unsigned int rt_least; //save the least rtime
 
   for(;;){
     // Enable interrupts on this processor.
@@ -273,16 +278,23 @@ scheduler(void)
 
     // Loop over process table looking for process to run.
     acquire(&ptable.lock);
+    p_least = 0;
+    rt_least = 0;
     for(p = ptable.proc; p < &ptable.proc[NPROC]; p++){
       if(p->state != RUNNABLE)
         continue;
-
+      if(rt_least == 0 || p->rtime < rt_least){
+        rt_least = p->rtime;
+        p_least = p;
+      }
+    }
+    if(rt_least != 0){
       // Switch to chosen process.  It is the process's job
       // to release ptable.lock and then reacquire it
       // before jumping back to us.
-      proc = p;
-      switchuvm(p);
-      p->state = RUNNING;
+      proc = p_least;
+      switchuvm(p_least);
+      p_least->state = RUNNING;
       swtch(&cpu->scheduler, proc->context);
       switchkvm();
 
@@ -291,10 +303,8 @@ scheduler(void)
       proc = 0;
     }
     release(&ptable.lock);
-
   }
 }
-
 // Enter scheduler.  Must hold only ptable.lock
 // and have changed proc->state.
 void
@@ -320,6 +330,7 @@ void
 yield(void)
 {
   acquire(&ptable.lock);  //DOC: yieldlock
+  proc->rtime = gtime++;
   proc->state = RUNNABLE;
   sched();
   release(&ptable.lock);
@@ -392,8 +403,10 @@ wakeup1(void *chan)
   struct proc *p;
 
   for(p = ptable.proc; p < &ptable.proc[NPROC]; p++)
-    if(p->state == SLEEPING && p->chan == chan)
+    if(p->state == SLEEPING && p->chan == chan){
+      p->rtime = gtime++;
       p->state = RUNNABLE;
+    }
 }
 
 // Wake up all processes sleeping on chan.
@@ -418,8 +431,10 @@ kill(int pid)
     if(p->pid == pid){
       p->killed = 1;
       // Wake process from sleep if necessary.
-      if(p->state == SLEEPING)
+      if(p->state == SLEEPING){
+        p->rtime = gtime++;
         p->state = RUNNABLE;
+      }
       release(&ptable.lock);
       return 0;
     }
